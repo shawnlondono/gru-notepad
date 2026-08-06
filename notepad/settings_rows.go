@@ -1,0 +1,82 @@
+// Settings row helpers (copied from examples/settings_desktop_rows.go for app-local use).
+// Cookbook recipe: CP-SETTINGS-DESKTOP-01 — demos keep the examples copy.
+package notepad
+
+import "github.com/ledocorp/gru/ui"
+
+func settingsToggleRow(id, title, subtitle string, tog *ui.Toggle) *ui.ListTile {
+	tile := ui.NewListTile(id, title, subtitle, 0, 0, 0, 0)
+	tile.SetTrailing(tog)
+	return tile
+}
+
+func settingsIconToggleRow(id, title, subtitle string, icon string, tog *ui.Toggle) *ui.ListTile {
+	tile := settingsToggleRow(id, title, subtitle, tog)
+	tile.SetLeading(settingsRowIcon(id+"-icon", icon))
+	return tile
+}
+
+func settingsFlatToggleRow(id, title, subtitle string, icon string, tog *ui.Toggle) *ui.ListTile {
+	return settingsIconToggleRow(id, title, subtitle, icon, tog)
+}
+
+func settingsRowIcon(id string, icon string) *ui.Icon {
+	return ui.NewIcon(id, icon, ui.PhosphorRegular, 0, 0, 22, 22)
+}
+
+func settingsFlatDropdownRow(id, title, subtitle string, icon string, dd *ui.Dropdown) *ui.ListTile {
+	tile := ui.NewListTile(id, title, subtitle, 0, 0, 0, 0)
+	tile.SetLeading(settingsRowIcon(id+"-icon", icon))
+	dd.SetStyle("toolbar-menu-value")
+	// Type size only — never bake TextColor (appearance must restyle on light/dark).
+	if typo := ui.GetThemeStyle("list-tile"); typo.FontSize > 0 {
+		dd.SetStyleOverrides(ui.Style{
+			FontSize:      typo.FontSize,
+			FontDensity:   typo.FontDensity,
+			NoCaptionBold: typo.NoCaptionBold,
+		})
+	}
+	dd.PreferredWidth = 180
+	dd.MaxWidth = 180
+	dd.MinWidth = 120
+	tile.SetTrailing(dd)
+	return tile
+}
+
+func settingsPageTitleRow(id, title string, onBack func()) *ui.Container {
+	row := ui.NewContainer(id, 0, 0, 0, 0)
+	row.LayoutType = ui.LayoutFlex
+	row.FlexDirection = ui.FlexRow
+	row.Gap = 4
+	row.AutoHeight = true
+	row.SetStyle("transparent")
+
+	ui.Phosphor.EnsureLoaded(ui.PhosphorCaretLeft, ui.PhosphorRegular)
+	back := ui.NewIconButton(id+"-back", "", "", 0, 0, 44, 44)
+	back.SetStyle("appbar-icon")
+	back.SetPhosphorIcon(ui.PhosphorCaretLeft, ui.PhosphorRegular)
+	back.OnClick = onBack
+	ui.SetTooltip(back, "Back to editor")
+	row.AddChild(back)
+
+	lbl := ui.NewLabel(id+"-title", title, 0, 0, 0, 0)
+	lbl.SetStyle("settings-page-title")
+	lbl.Align = ui.LabelAlignLeft
+	row.AddChild(lbl)
+	return row
+}
+
+func settingsSection(id, title string) *ui.Container {
+	wrap := ui.NewContainer(id+"-wrap", 0, 0, 0, 0)
+	wrap.LayoutType = ui.LayoutFlex
+	wrap.FlexDirection = ui.FlexColumn
+	wrap.SetStyle("settings-section-wrap")
+	spacer := ui.NewContainer(id+"-sp", 0, 0, 0, 16)
+	spacer.SetStyle("transparent")
+	lbl := ui.NewLabel(id, title, 0, 0, 0, 0)
+	lbl.SetStyle("settings-section")
+	lbl.Align = ui.LabelAlignLeft
+	wrap.AddChild(spacer)
+	wrap.AddChild(lbl)
+	return wrap
+}

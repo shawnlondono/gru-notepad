@@ -1,0 +1,22 @@
+# Build / IDE
+*.exe
+*.test
+*.out
+dist/
+.idea/
+.vscode/
+*.syso
+
+# Local module replace / vendor experiments
+/vendor/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# App data if ever run from this tree
+/data/
+*.db
+
+# Showcase clips live on X — do not ship large MP4s in git
+media/preview/*.mp4
