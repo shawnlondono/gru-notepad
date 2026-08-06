@@ -1,5 +1,4 @@
-// Settings row helpers (copied from examples/settings_desktop_rows.go for app-local use).
-// Cookbook recipe: CP-SETTINGS-DESKTOP-01 — demos keep the examples copy.
+// Settings row helpers for desktop settings.
 package notepad
 
 import "github.com/ledocorp/gru/ui"
@@ -28,7 +27,7 @@ func settingsFlatDropdownRow(id, title, subtitle string, icon string, dd *ui.Dro
 	tile := ui.NewListTile(id, title, subtitle, 0, 0, 0, 0)
 	tile.SetLeading(settingsRowIcon(id+"-icon", icon))
 	dd.SetStyle("toolbar-menu-value")
-	// Type size only — never bake TextColor (appearance must restyle on light/dark).
+	// Type size only â€” never bake TextColor (appearance must restyle on light/dark).
 	if typo := ui.GetThemeStyle("list-tile"); typo.FontSize > 0 {
 		dd.SetStyleOverrides(ui.Style{
 			FontSize:      typo.FontSize,

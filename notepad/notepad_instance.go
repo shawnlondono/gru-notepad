@@ -9,7 +9,7 @@ func init() {
 }
 
 // StartupInstance forwards duplicate launches to the running process (Windows/Linux).
-// forwardPath is argv/GORY_OPEN_FILE for this launch; exit=true means this process should quit.
+// forwardPath is an optional file path for this launch; exit=true means this process should quit.
 func StartupInstance(forwardPath string) (exit bool, stop func()) {
 	return appinstance.Startup(forwardPath, func(path string) {
 		if onInstanceOpenFile != nil {

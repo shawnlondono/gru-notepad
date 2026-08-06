@@ -1,6 +1,4 @@
-// grunotepad — thin Gru Notepad host (MASTER_SEPARATION_PLAN Phase 2).
-// Product path: go build -tags notepad -o GruNotepad.exe ./cmd/grunotepad
-// Scene: apps/notepad. Must not import Studio, Foundry, or Prism.
+// grunotepad is the thin window host for Gru Notepad.
 package main
 
 import (
@@ -118,7 +116,7 @@ func main() {
 		rl.EndDrawing()
 	}
 
-	fmt.Fprintln(os.Stderr, "grunotepad: thin host (CP-SHELL-EDGE via apps/notepad)")
+	fmt.Fprintln(os.Stderr, "grunotepad: thin host")
 
 	for !rl.WindowShouldClose() && !shouldClose {
 		ui.PreparePointerInput()
@@ -142,7 +140,7 @@ func main() {
 			doc.InvalidatePaint()
 		}
 
-		// Match Studio frame order: overlay hit rects → title bar → wheel →
+		// Frame order: overlay hit rects → title bar → wheel →
 		// layout-before-pointer → overlay mgrs → blocked scene input → Update.
 		ui.PrepareOverlayHitTest(doc.Root)
 		titleBar.Update(windowW, windowH)
@@ -150,7 +148,7 @@ func main() {
 		if borderless && titleBar.IsDragging() {
 			ui.ResetWheelScrollGesture()
 		}
-		// Chrome drag / wheel band (Studio) — without ProcessSwitchListTile yet.
+		// Chrome drag / wheel band.
 		if titleBar != nil {
 			ui.SetChromeTitleBarDragging(titleBar.IsDragging() || titleBar.IsTitleClickPending())
 			ui.SetChromeWindowMoving(titleBar.IsDragging() || titleBar.IsTitleClickPending() || titleBar.IsResizing() || ui.FillClientChromeResizing())
@@ -174,7 +172,7 @@ func main() {
 		}
 		ui.BeginFrameCursor()
 		doc.Root.Update(dt)
-		// Dismiss context menu before focus routing (same contract as Studio).
+		// Dismiss context menu before focus routing.
 		ui.ContextMenuMgr.Update(dt)
 		scene.OnUpdate(doc, dt)
 		if rl.IsWindowReady() {

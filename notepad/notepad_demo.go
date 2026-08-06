@@ -1,8 +1,6 @@
 // Notepad (Go) is the Phase 1–2 reference app: plain-text editing, native file I/O,
 // desktop menu bar, status bar, ui.TextEditor, and a debounced Markdown preview pane.
 // Keyboard shortcuts and menu hints are in OnUpdate + menu builders; preview in notepad_preview.go.
-// UI composition: docs/COMPOSITION_PATTERNS.md §11 (CP-NOTEPAD-* recipes) — read before changing chrome.
-// Dev: air (see .air.toml), GORY_SCENE, GORY_OPEN_FILE — docs/REFERENCE_APPS.md, ARCHITECTURE.md §11.6.
 package notepad
 
 import (
@@ -184,8 +182,7 @@ func (s *notepadScene) toggleSpellCheck() {
 
 func (s *notepadScene) Build(doc *ui.Document) {
 	s.uiDoc = doc
-	// Product host: pack Notepad icons once. Studio still calls PreloadScenePhosphor
-	// after Build for catalog warmth — do not pull the full demo WarmGlyph set here.
+	// Product host: pack Notepad icons once (avoid the full demo WarmGlyph set).
 	s.preloadNotepadRibbonIcons()
 	s.store, _ = OpenNotepadStore()
 	prefs := defaultNotepadPrefs()
@@ -392,8 +389,8 @@ func (s *notepadScene) Build(doc *ui.Document) {
 		s.toggleStatusBarApply(false)
 	}
 	examples.FinishShellMount(doc)
-	// Host may Resize after Build; soft-reset preview once widths are real (Studio loadScene
-	// also calls examples.FinishShellMount after Resize — thin host must mirror that).
+	// Host may Resize after Build; soft-reset preview once widths are real
+	// (thin host mirrors FinishShellMount after Resize).
 	if s.showPreview && s.mdPreview != nil {
 		s.rebuildPreview()
 		s.mdPreview.SimulateResizeReflow()

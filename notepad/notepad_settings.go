@@ -1,4 +1,4 @@
-// Gru Notepad — in-shell settings (CP-SETTINGS-DESKTOP-01 / CP-NOTEPAD-SETTINGS-01).
+// Gru Notepad in-shell settings.
 package notepad
 
 import (

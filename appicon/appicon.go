@@ -1,8 +1,5 @@
-// Package appicon applies OS/title-bar icons for the public Gru Notepad host.
-//
-// The private monorepo uses github.com/ledocorp/gru/internal/appicon (not importable
-// from another module). This package is the public-boundary stand-in — stubs today;
-// embed Notepad PNGs here before a polished release if taskbar/title icons matter.
+﻿// Package appicon applies OS/title-bar icons for the Gru Notepad host.
+// Assets may be embedded here; stubs are fine until PNGs are added.
 package appicon
 
 import rl "github.com/gen2brain/raylib-go/raylib"

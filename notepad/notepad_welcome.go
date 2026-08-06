@@ -144,7 +144,7 @@ SQLite under the hood remembers open docs, recent files, and prefs (wrap, spell,
 
 ## Caps and the thin host
 
-` + "`cmd/grunotepad`" + ` links optional capabilities at build time (` + "`-tags notepad`" + `). The scene lives in ` + "`apps/notepad`" + `; public extract (` + "`gru-notepad`" + `) is staged separately from the toolkit export. Idea: dogfood the toolkit without folding the app into the toolkit repo forever.
+` + "`cmd/grunotepad`" + ` links optional capabilities (markdown, syntax, spell) at build time. The scene package lives beside the host in this repository and depends on the public GRU toolkit module.
 
 ### Responsive
 
@@ -156,7 +156,7 @@ Ship-quality editor + preview for showcase and dogfood. Not a sync cloud, not a 
 
 ---
 
-*Built with GRU · showcase / dogfood — explore the caps, then read the cookbook if you build your own scene.*
+*Built with GRU · explore the caps, then scaffold your own app with the toolkit docs.*
 `
 }
 

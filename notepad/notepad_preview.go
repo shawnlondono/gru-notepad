@@ -133,7 +133,7 @@ func (s *notepadScene) tickPreview(dt float32) {
 }
 
 // softResetPreviewOnHostResize nudges MarkdownView when the document width changes.
-// Studio's Markdown Preview demo gets this via examples.FinishShellMount + simple full-width
+// Markdown preview demos get this via examples.FinishShellMount + simple full-width
 // layout; Notepad's SplitView pane often needs an explicit SimulateResizeReflow so
 // RichText/tables remeasure. Scoped to notepadScene — does not touch ui/preview demos.
 func (s *notepadScene) softResetPreviewOnHostResize(doc *ui.Document) {
