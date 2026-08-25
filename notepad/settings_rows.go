@@ -1,4 +1,4 @@
-// Settings row helpers for desktop settings.
+// Settings row helpers (copied from examples/settings_desktop_rows.go for app-local use).
 package notepad
 
 import "github.com/ledocorp/gru/ui"
@@ -27,7 +27,7 @@ func settingsFlatDropdownRow(id, title, subtitle string, icon string, dd *ui.Dro
 	tile := ui.NewListTile(id, title, subtitle, 0, 0, 0, 0)
 	tile.SetLeading(settingsRowIcon(id+"-icon", icon))
 	dd.SetStyle("toolbar-menu-value")
-	// Type size only â€” never bake TextColor (appearance must restyle on light/dark).
+	// Type size only — never bake TextColor (appearance must restyle on light/dark).
 	if typo := ui.GetThemeStyle("list-tile"); typo.FontSize > 0 {
 		dd.SetStyleOverrides(ui.Style{
 			FontSize:      typo.FontSize,
@@ -42,7 +42,7 @@ func settingsFlatDropdownRow(id, title, subtitle string, icon string, dd *ui.Dro
 	return tile
 }
 
-func settingsPageTitleRow(id, title string, onBack func()) *ui.Container {
+func settingsPageTitleRow(id, title string, onBack func()) (*ui.Container, *ui.IconButton) {
 	row := ui.NewContainer(id, 0, 0, 0, 0)
 	row.LayoutType = ui.LayoutFlex
 	row.FlexDirection = ui.FlexRow
@@ -62,7 +62,7 @@ func settingsPageTitleRow(id, title string, onBack func()) *ui.Container {
 	lbl.SetStyle("settings-page-title")
 	lbl.Align = ui.LabelAlignLeft
 	row.AddChild(lbl)
-	return row
+	return row, back
 }
 
 func settingsSection(id, title string) *ui.Container {

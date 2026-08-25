@@ -1,18 +1,18 @@
 # Gru Notepad
 
-**Showcase version:** 0.7.2 (aligned with GRU toolkit)  
-**License:** [Mozilla Public License 2.0](LICENSE)  
-**Depends on:** [`github.com/ledocorp/gru`](https://github.com/ledocorp/gru) `@v0.7.2`
+**Showcase version:** 0.8.0 (aligned with GRU toolkit)  
+**License:** [GNU GPLv3](LICENSE)  
+**Depends on:** [`github.com/ledocorp/gru`](https://github.com/ledocorp/gru) `@v0.8.0`
 
 Gru Notepad is a **product-shaped example** of the Gru UI toolkit: edge shell, text editor, multi-doc sessions, markdown preview, syntax highlight, and spell check in one thin desktop host.
 
-It is **not** “Notepad product v1.” Treat this as a **v0.7.x capability showcase / template**.
+It is **not** “Notepad product v1.” Treat this as a **v0.8.x capability showcase / template**.
 
 | | |
 |--|--|
 | **Publisher** | [LedoCorp](https://ledocorp.org) |
 | **Site** | [ledocorp.org/gru/notepad](https://ledocorp.org/gru/notepad) |
-| **Toolkit** | [`ledocorp/GRU`](https://github.com/ledocorp/GRU) (separate MPL repo) |
+| **Toolkit** | [`ledocorp/GRU`](https://github.com/ledocorp/GRU) (separate GPLv3 repo) |
 
 ---
 
@@ -39,6 +39,12 @@ go build -o GruNotepad.exe ./cmd/grunotepad
 ```
 
 Spell check expects Hunspell dictionaries beside the binary in release zips (`dict/en_US/`).
+
+---
+
+## License
+
+Gru Notepad is **GNU GPLv3**. The Gru toolkit it depends on is also GPLv3. Official trees are **BDFL** (no public PRs). LedoCorp may offer a commercial license later for proprietary use; that path is separate from this open-source tree.
 
 ---
 

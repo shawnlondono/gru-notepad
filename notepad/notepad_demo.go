@@ -32,7 +32,14 @@ type notepadScene struct {
 	openNotes            *examples.ListPane
 	workArea             *ui.Container
 	settingsPage         *ui.Container
+	settingsBack         *ui.IconButton
+	ribbonBack           *ui.IconButton
+	settingsAppearanceDD *ui.Dropdown
 	inSettings           bool
+	paneSettlePending    bool // remasure editor/preview after mobile sheet or note switch
+	settingsThemePending bool // rebuild preview after leaving settings
+	settingsSyncing      bool // suppress apply() during syncSettingsToggles
+	breakpointLayoutPending bool
 	mobilePanelSheets    bool
 	mobileBottomNav      bool
 	setWrapTog           *ui.Toggle
@@ -79,7 +86,15 @@ type notepadScene struct {
 	showSession          bool
 	previewPending       bool
 	previewTimer         float32
-	lastPreviewHostW     float32 // soft-reset MarkdownView when host width changes (Notepad only)
+	lastPreviewHostW       float32 // last width we reflowed MarkdownView at (Notepad only)
+	prevFramePreviewHostW  float32 // prior frame width — detect resize settle
+	previewResizePending   bool    // coalesced SimulateResizeReflow after resize ends
+	previewReflowDelay     float32 // kept for API compatibility; settle is immediate on release
+	navMountFrames         int     // suppress bottom-nav auto-hide flash on startup
+	lastAppliedBreakpoint  ui.Breakpoint
+	statusRefreshAccum     float32
+	lastStatusTextLen      int
+	lastStatusDirtySnap    bool
 	statusDocTitle       *ui.Label
 	statusDocState       *ui.Label
 	statusLn             *ui.Label
@@ -182,7 +197,8 @@ func (s *notepadScene) toggleSpellCheck() {
 
 func (s *notepadScene) Build(doc *ui.Document) {
 	s.uiDoc = doc
-	// Product host: pack Notepad icons once (avoid the full demo WarmGlyph set).
+	// Pack Notepad icons once for this host
+	// after Build for catalog warmth — do not pull the full demo WarmGlyph set here.
 	s.preloadNotepadRibbonIcons()
 	s.store, _ = OpenNotepadStore()
 	prefs := defaultNotepadPrefs()
@@ -363,6 +379,7 @@ func (s *notepadScene) Build(doc *ui.Document) {
 	s.bottomNav = s.buildMobileBottomNav()
 	root.AddChild(s.bottomNav)
 	s.wireChromeResponsive()
+	s.lastAppliedBreakpoint = ui.ActiveBreakpoint.Get()
 	s.applyChromeLayout()
 	root.MarkDirty()
 
@@ -389,17 +406,16 @@ func (s *notepadScene) Build(doc *ui.Document) {
 		s.toggleStatusBarApply(false)
 	}
 	examples.FinishShellMount(doc)
-	// Host may Resize after Build; soft-reset preview once widths are real
-	// (thin host mirrors FinishShellMount after Resize).
+	s.settleEditorAfterShellMount()
+	// Host may Resize after Build; one preview rebuild once widths are real.
 	if s.showPreview && s.mdPreview != nil {
 		s.rebuildPreview()
-		s.mdPreview.SimulateResizeReflow()
 	}
 	// After first frame: load Inter (preview) + mono, then warm inactive MD parse caches.
-	// Avoids paying font load on the first Markdown Preview toggle.
 	doc.QueueMain(func() {
 		ui.EnsurePreviewUIFont(0)
 		ui.EnsureUIFontAux(0)
+		s.settleEditorAfterShellMount()
 		s.warmInactiveMarkdownCaches()
 	})
 	SetInstanceOpenFileHandler(func(path string) {
@@ -577,6 +593,7 @@ func (s *notepadScene) openDocument(path, text string) {
 	s.refreshOpenNotesChrome()
 	s.refreshChrome()
 	s.persistOpenDocs()
+	s.paneSettlePending = true
 }
 
 func (s *notepadScene) shouldOpenInNewDoc() bool {
@@ -669,6 +686,42 @@ func (s *notepadScene) statusDocSuffix() string {
 	default:
 		return ""
 	}
+}
+
+func (s *notepadScene) refreshStatusThrottled(dt float32) {
+	s.statusRefreshAccum += dt
+	textLen := 0
+	if s.editor != nil {
+		textLen = len(s.editor.Text.Get())
+	}
+	dirtySnap := s.dirty
+	need := s.statusRefreshAccum >= 0.2 ||
+		textLen != s.lastStatusTextLen ||
+		dirtySnap != s.lastStatusDirtySnap ||
+		(s.editor != nil && s.editor.IsFocused() && editorInputThisFrame())
+	if !need {
+		return
+	}
+	s.statusRefreshAccum = 0
+	s.lastStatusTextLen = textLen
+	s.lastStatusDirtySnap = dirtySnap
+	s.refreshStatus()
+}
+
+func editorInputThisFrame() bool {
+	if rl.GetCharPressed() != 0 {
+		return true
+	}
+	for _, k := range []int32{
+		rl.KeyLeft, rl.KeyRight, rl.KeyUp, rl.KeyDown,
+		rl.KeyHome, rl.KeyEnd, rl.KeyBackspace, rl.KeyDelete,
+		rl.KeyPageUp, rl.KeyPageDown,
+	} {
+		if rl.IsKeyPressed(k) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *notepadScene) refreshStatus() {
@@ -960,8 +1013,10 @@ func (s *notepadScene) applyNotepadThemePrefs() {
 		s.menuBar.MarkDirty()
 	}
 	s.applyEditorSyntax()
-	if s.showPreview {
+	if s.showPreview && !s.inSettings {
 		s.rebuildPreview()
+	} else if s.showPreview {
+		s.settingsThemePending = true
 	}
 	s.syncRibbonChromaTheme()
 }
@@ -1065,10 +1120,13 @@ func (s *notepadScene) OnUpdate(doc *ui.Document, dt float32) {
 	}
 	s.handleSettingsKeys()
 	if s.inSettings {
+		s.handleSettingsPointer()
 		return
 	}
 	s.tickPreview(dt)
 	s.softResetPreviewOnHostResize(doc)
+	s.tickPreviewReflow(dt)
+	s.flushPaneSettleIfPending()
 	if s.persistTimer > 0 {
 		s.persistTimer -= dt
 		if s.persistTimer <= 0 {
@@ -1100,7 +1158,7 @@ func (s *notepadScene) OnUpdate(doc *ui.Document, dt float32) {
 	} else if keyChordCtrl(rl.KeyZero) || keyChordCtrl(rl.KeyKp0) {
 		s.setZoom(1)
 	}
-	s.refreshStatus()
+	s.refreshStatusThrottled(dt)
 }
 
 func keyChordCtrl(key int32) bool {

@@ -3,7 +3,7 @@ package notepad
 // Welcome pack — seeded open notes for a clean Gru Notepad install.
 // Meta key welcome_pack gates one-shot wipe+seed (see NotepadStore.EnsureWelcomePack).
 
-const notepadWelcomePackVersion = "6"
+const notepadWelcomePackVersion = "5"
 
 type welcomeNote struct {
 	id          string
@@ -17,7 +17,7 @@ func notepadWelcomeNotes() []welcomeNote {
 	return []welcomeNote{
 		{
 			id:          "welcome-gru",
-			displayName: "Welcome · Gru",
+			displayName: "Welcome — Gru",
 			showPreview: false,
 			text:        welcomeGruMD(),
 		},
@@ -29,7 +29,7 @@ func notepadWelcomeNotes() []welcomeNote {
 		},
 		{
 			id:          "welcome-fx",
-			displayName: "fx · LedoCorp",
+			displayName: "fx — LedoCorp",
 			showPreview: false,
 			text:        welcomeFxMD(),
 		},
@@ -51,9 +51,9 @@ func notepadWelcomeNotes() []welcomeNote {
 func welcomeGruMD() string {
 	return `# Welcome to Gru
 
-**Gru** is LedoCorp's retained-mode UI toolkit for native desktop apps. You write Go scenes, compose widgets by hand, and ship a thin host: no React-in-Go layer, no hidden virtual DOM.
+**Gru** is LedoCorp's retained-mode UI toolkit for native desktop apps. You write Go scenes, compose widgets by hand, and ship a thin host — no React-in-Go layer, no hidden virtual DOM.
 
-> This Notepad build is a **capability showcase** (v0.7.x era): editor, preview, syntax, and spell in one product-shaped host. It is not a finished commercial notes suite.
+> This Notepad build is a **capability showcase** (v0.7.x era): editor, preview, syntax, and spell in one product-shaped host — not a finished commercial notes suite.
 
 ## What “retained-mode” means here
 
@@ -61,10 +61,10 @@ Widgets keep identity across frames. Layout and draw mark dirty regions instead 
 
 ## Why Gru
 
-1. **Pay for what you import**: lean hosts stay lean; caps (syntax, spell, markdown) opt in at link time
-2. **Composition over ceremony**: build with flex plus ` + "`Panel`" + ` / ` + "`Card`" + ` / ` + "`ListTile`" + `, not a second framework
-3. **Same engine, many hosts**: Hello, Calculator, and **Gru Notepad** share one ` + "`ui`" + ` spine
-4. **Desktop-first chrome**: MenuBar, ribbon, status bar, edge-to-edge root
+1. **Pay for what you import** — lean hosts stay lean; caps (syntax, spell, markdown) opt in at link time
+2. **Composition over ceremony** — compose shells and surfaces from documented recipes, not a second framework
+3. **Same engine, many hosts** — Hello, Calculator, demos, and **Gru Notepad** share one ` + "`ui`" + ` spine
+4. **Desktop-first chrome** — MenuBar, ribbon, status bar, edge-to-edge root
 
 ## Quick map
 
@@ -85,6 +85,8 @@ A typical host:
 3. Builds scenes: panels, lists, editors, modals
 4. Optionally enables caps so syntax / spell / preview link in
 
+Product apps (Notepad, Calculator) use thin ` + "`cmd/...`" + ` binaries so the toolkit stays clean: apps depend on GRU as a module.
+
 ## Learn more
 
 - Toolkit: [ledocorp/GRU](https://github.com/ledocorp/gru) on GitHub
@@ -100,7 +102,7 @@ Open **Gru Notepad**, **fx**, **Syntax sample**, and **Markdown gallery** in the
 func welcomeNotepadMD() string {
 	return `# Gru Notepad
 
-A small notes app built on Gru, meant to show how several toolkit capabilities work together in one product-shaped host. It is the first showcase app on the public toolkit path (v0.7.x capability template), not a claim that “Notepad product v1” is finished.
+A small notes app built on Gru — meant to show how several toolkit capabilities work together in one product-shaped host. It is the first showcase app on the public toolkit path (v0.7.x capability template), not a claim that “Notepad product v1” is finished.
 
 ## What you have open
 
@@ -144,7 +146,7 @@ SQLite under the hood remembers open docs, recent files, and prefs (wrap, spell,
 
 ## Caps and the thin host
 
-` + "`cmd/grunotepad`" + ` links optional capabilities (markdown, syntax, spell) at build time. The scene package lives beside the host in this repository and depends on the public GRU toolkit module.
+` + "`cmd/grunotepad`" + ` blank-imports optional capabilities (` + "`ui/markdown`" + `, ` + "`ui/spell`" + `, ` + "`ui/syntax`" + `) so lean hosts stay lean. This repository is the app showcase; the toolkit ships separately as ` + "`github.com/ledocorp/gru`" + `.
 
 ### Responsive
 
@@ -152,11 +154,11 @@ On a narrow window, Notepad can switch to ribbon + mobile bottom nav and sheet-s
 
 ### Honest scope
 
-Ship-quality editor + preview for showcase and dogfood. Not a sync cloud, not a plugin marketplace, not Joplin/Obsidian feature parity. RAM can sit in the hundreds of MB with SSAA, atlases, and preview — that is an accepted quality trade for this host.
+Ship-quality editor + preview for showcase use. Not a sync cloud, not a plugin marketplace, not Joplin/Obsidian feature parity. RAM can sit in the hundreds of MB with SSAA, atlases, and preview — that is an accepted quality trade for this host.
 
 ---
 
-*Built with GRU · explore the caps, then scaffold your own app with the toolkit docs.*
+*Built with GRU · capability showcase — explore the caps, then build your own thin host.*
 `
 }
 

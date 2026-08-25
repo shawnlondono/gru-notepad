@@ -46,9 +46,10 @@ func (s *notepadScene) buildMobileBottomNav() *ui.BottomNavigationBar {
 		ui.PhosphorSearch,
 		ui.PhosphorCodeBox,
 	}
-	for _, name := range icons {
-		ui.Phosphor.EnsureLoaded(name, ui.PhosphorRegular)
-	}
+	// Draw path prefers Fill when PreferIconSharp1x is on — warm that weight so the
+	// first visible frame is not a Regular→Fill swap (looks like a one-frame distort).
+	ui.Phosphor.EnsureLoadedMany(icons, ui.PhosphorFill)
+	ui.Phosphor.EnsureLoadedMany(icons, ui.PhosphorRegular)
 	nav := ui.NewBottomNavigationBar("notepad-mobile-nav", []ui.BottomNavItem{
 		{Phosphor: ui.PhosphorHome2},
 		{Phosphor: ui.PhosphorEditBox},
@@ -114,6 +115,14 @@ func (s *notepadScene) updateMobileBottomNav(doc *ui.Document) {
 	if s.bottomNav == nil || doc == nil {
 		return
 	}
+	if s.navMountFrames < 4 {
+		s.navMountFrames++
+		if !s.bottomNav.IsHidden() {
+			s.bottomNav.Hide()
+			s.syncMobileBottomChrome()
+		}
+		return
+	}
 	if !s.useMobileBottomNav() || s.inSettings {
 		if !s.bottomNav.IsHidden() {
 			s.bottomNav.Hide()
@@ -121,8 +130,51 @@ func (s *notepadScene) updateMobileBottomNav(doc *ui.Document) {
 		}
 		return
 	}
+	wasHidden := s.bottomNav.IsHidden()
 	examples.UpdateShellFooterAutoHide(s.bottomNav, doc)
+	// Auto-hide Show/Hide runs after the frame's Layout. Without an immediate
+	// reflow the bar draws one frame at stale/zero flex bounds (distorted strip).
+	if wasHidden != s.bottomNav.IsHidden() {
+		s.reflowAfterBottomNavToggle(doc)
+	} else if !s.bottomNav.IsHidden() {
+		s.pinMobileBottomNavBounds(doc)
+	}
 	s.syncMobileBottomChrome()
+}
+
+// reflowAfterBottomNavToggle re-runs root Layout so flex assigns real width/height
+// the same frame the bar becomes visible (or frees space when it hides).
+func (s *notepadScene) reflowAfterBottomNavToggle(doc *ui.Document) {
+	if doc == nil || doc.Root == nil {
+		return
+	}
+	doc.Root.MarkDirty()
+	doc.Root.Layout()
+	s.pinMobileBottomNavBounds(doc)
+}
+
+// pinMobileBottomNavBounds snaps the compact bar to the client bottom edge so a
+// partial flex pass cannot leave it at 0×0 or a wrong Y for even one draw.
+func (s *notepadScene) pinMobileBottomNavBounds(doc *ui.Document) {
+	if s.bottomNav == nil || doc == nil || s.bottomNav.IsHidden() {
+		return
+	}
+	h := ui.BottomNavCompactHeight()
+	want := rl.NewRectangle(0, float32(doc.Height)-h, float32(doc.Width), h)
+	cur := s.bottomNav.Bounds()
+	if abs32(cur.X-want.X) > 0.5 || abs32(cur.Y-want.Y) > 0.5 ||
+		abs32(cur.Width-want.Width) > 0.5 || abs32(cur.Height-want.Height) > 0.5 {
+		s.bottomNav.SetBounds(want)
+		s.bottomNav.Layout()
+		s.bottomNav.MarkDrawDirty()
+	}
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func (s *notepadScene) syncMobileBottomChrome() {

@@ -4,12 +4,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
-	"github.com/shawnlondono/gru-notepad/appicon"
 	"github.com/shawnlondono/gru-notepad/notepad"
 	"github.com/ledocorp/gru/examples"
 	"github.com/ledocorp/gru/examples/appinstance"
+	"github.com/shawnlondono/gru-notepad/appicon"
 	"github.com/ledocorp/gru/ui"
 )
 
@@ -95,7 +96,7 @@ func main() {
 	examples.ConfigureTitleBar(titleBar, scene)
 	rl.SetWindowTitle("Gru Notepad")
 
-	bg := rl.NewColor(228, 229, 235, 255)
+	bg := ui.WindowChromeFill()
 	borderless := true
 	windowShown := false
 	rl.SetTargetFPS(60)
@@ -107,7 +108,7 @@ func main() {
 			return
 		}
 		rl.BeginDrawing()
-		ui.BeginDrawingBorderless(bg, borderless, windowW, windowH)
+		ui.BeginDrawingBorderless(ui.WindowChromeFill(), borderless, windowW, windowH)
 		if ui.SuperTargetDrawable() {
 			ui.BlitToScreenBorderless(windowW, windowH, borderless)
 		}
@@ -116,13 +117,23 @@ func main() {
 		rl.EndDrawing()
 	}
 
-	fmt.Fprintln(os.Stderr, "grunotepad: thin host")
+	fmt.Fprintln(os.Stderr, "grunotepad: thin host (edge shell)")
 
+	setBreakpointIfChanged := func(windowW int32) {
+		if bp := ui.CurrentBreakpoint(float32(windowW)); ui.ActiveBreakpoint.Get() != bp {
+			ui.ActiveBreakpoint.Set(bp)
+		}
+	}
+
+	var resizeHold ui.ResizeHoldTracker
+	var captionHoverMask int
 	for !rl.WindowShouldClose() && !shouldClose {
+		frameStart := time.Now()
 		ui.PreparePointerInput()
 		ui.SetActiveDocument(doc)
 		dt := rl.GetFrameTime()
 		doc.DrainQueue()
+		bg = ui.WindowChromeFill()
 
 		nw, nh := int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight())
 		if nw < 1 {
@@ -132,27 +143,54 @@ func main() {
 			nh = windowH
 		}
 		frameResized := nw != windowW || nh != windowH
+		// Live dimension change: mark moving before ANY Resize→Root.Layout this frame.
+		if frameResized || titleBar.IsResizing() || ui.FillClientChromeResizing() {
+			ui.SetChromeWindowMoving(true)
+		}
 		if frameResized {
 			windowW, windowH = nw, nh
+			resizeHold.NoteDimensionChange(frameStart)
+			// Defer RT + shell layout (S1: ForceFullLayout only if rem changes — inside Sync).
 			ui.SyncBorderlessClientSize(doc, titleBar, windowW, windowH)
-			ui.ActiveBreakpoint.Set(ui.CurrentBreakpoint(float32(windowW)))
-			doc.ForceFullLayout()
-			doc.InvalidatePaint()
+			setBreakpointIfChanged(windowW)
 		}
 
 		// Frame order: overlay hit rects → title bar → wheel →
 		// layout-before-pointer → overlay mgrs → blocked scene input → Update.
 		ui.PrepareOverlayHitTest(doc.Root)
 		titleBar.Update(windowW, windowH)
-		ui.SyncBorderlessChromeFrame(titleBar)
-		if borderless && titleBar.IsDragging() {
-			ui.ResetWheelScrollGesture()
+		prevCaptionMask := captionHoverMask
+		captionHoverMask = titleBar.CaptionHoverMask()
+		// Post-blit paints hover on cache hits; one invalidate on hover exit clears stale plates.
+		if prevCaptionMask != 0 && captionHoverMask == 0 &&
+			!titleBar.IsResizing() && !titleBar.IsDragging() &&
+			!ui.PresentSizeMismatch(windowW, windowH) {
+			doc.InvalidatePaint()
 		}
-		// Chrome drag / wheel band.
+		ui.SyncBorderlessChromeFrame(titleBar)
+		// Chrome drag / wheel band — set BEFORE SyncBorderlessClientIfChanged so a
+		// title-bar edge drag Resize does not remeasure preview RichText mid-drag.
 		if titleBar != nil {
 			ui.SetChromeTitleBarDragging(titleBar.IsDragging() || titleBar.IsTitleClickPending())
-			ui.SetChromeWindowMoving(titleBar.IsDragging() || titleBar.IsTitleClickPending() || titleBar.IsResizing() || ui.FillClientChromeResizing())
+			// Do not OR frameResized here — that delayed preview settle one extra frame
+			// after mouse-up. Mid-drag is already gated by the early SetChromeWindowMoving
+			// before Sync + IsResizing() while the edge is held.
+			resizingChrome := titleBar.IsDragging() || titleBar.IsTitleClickPending() ||
+				titleBar.IsResizing() || ui.FillClientChromeResizing()
+			ui.SetChromeWindowMoving(resizingChrome)
+			if titleBar.IsResizing() {
+				resizeHold.NoteGesture(frameStart)
+			}
 			ui.SetWheelSuppressBandY(ui.TitleBarHeight)
+		}
+		if w, h, ok := ui.SyncBorderlessClientIfChanged(doc, titleBar, windowW, windowH); ok {
+			windowW, windowH = w, h
+			setBreakpointIfChanged(windowW)
+			frameResized = true
+			ui.SetChromeWindowMoving(true)
+		}
+		if borderless && titleBar.IsDragging() {
+			ui.ResetWheelScrollGesture()
 		}
 		ui.PrepareWheelScroll(doc.Root)
 		if doc.Root.IsDirty() || ui.SubtreeLayoutDirty(doc.Root) {
@@ -189,6 +227,15 @@ func main() {
 			doc.Root.Layout()
 		}
 		ui.DrainFillClientChromeResize()
+		if w, h, ok := ui.SyncBorderlessClientIfChanged(doc, titleBar, windowW, windowH); ok {
+			windowW, windowH = w, h
+			setBreakpointIfChanged(windowW)
+			frameResized = true
+			ui.SetChromeWindowMoving(true)
+			if doc.Root.IsDirty() || ui.SubtreeLayoutDirty(doc.Root) {
+				doc.Root.Layout()
+			}
+		}
 		ui.SyncWebViewHosts(doc)
 		focusBlock := resizeInputBlock
 		if titleBarBlocks {
@@ -202,11 +249,30 @@ func main() {
 			ui.RouteScenePointerFocus(doc)
 		}
 
+		// RT / client mismatch: defer recreate while dragging; never stretch-blit.
+		if ui.PresentSizeMismatch(windowW, windowH) {
+			resizingNow := frameResized || resizeHold.KeepActiveFPS(frameStart) || titleBar.IsResizing()
+			if resizingNow {
+				ui.DeferWindowTextures(windowW, windowH)
+			} else {
+				ui.FlushPendingWindowTextures()
+				if ui.PresentSizeMismatch(windowW, windowH) {
+					ui.ResizeWindowTextures(windowW, windowH)
+				}
+			}
+			frameResized = true
+		}
+
 		fullRedraw := false
 		if frameResized || titleBar.IsResizing() {
 			doc.InvalidatePaint()
 		}
-		if doc.NeedsRedraw() && ui.SuperTargetDrawable() {
+
+		// ARCHIVE 2026-08-21: while RT/client mismatch, skip SSAA pass — one direct
+		// draw at present. Filling a stale RT then blitting was double work + lag.
+		sizeMismatch := ui.PresentSizeMismatch(windowW, windowH)
+		needSuper := !sizeMismatch && (doc.NeedsRedraw() || ui.SuperTargetNeedsFill())
+		if needSuper && ui.SuperTargetDrawable() {
 			fullRedraw = true
 			ui.BeginSuperFrame(bg, borderless, windowW, windowH)
 			doc.Root.Draw()
@@ -214,31 +280,42 @@ func main() {
 			ui.EndSuperFrame()
 			ui.RecordCacheMiss()
 			ui.ClearDrawDirtySubtree(doc.Root)
-		} else if doc.NeedsRedraw() {
+		} else if needSuper {
 			ui.RecordCacheMiss()
 			doc.Root.MarkDrawDirty()
-		} else {
+		} else if !sizeMismatch {
 			ui.RecordCacheHit()
 			ui.ClearDrawDirtySubtree(doc.Root)
 		}
 
 		rl.BeginDrawing()
 		ui.BeginDrawingBorderless(bg, borderless, windowW, windowH)
-		if ui.SuperTargetDrawable() {
+		canBlit := !sizeMismatch && ui.SuperTargetDrawable() && !ui.SuperTargetNeedsFill()
+		if canBlit {
 			ui.BlitToScreenBorderless(windowW, windowH, borderless)
-		} else if doc.NeedsRedraw() {
-			// Early frames before SSAA RT is ready — avoid a black client.
+		} else {
+			// Mismatch / RT not ready — live-client direct draw (never stretch).
 			doc.Root.Draw()
 			titleBar.Draw()
 			ui.ClearDrawDirtySubtree(doc.Root)
+			ui.RecordCacheMiss()
+			fullRedraw = true
 		}
 		if borderless && !fullRedraw && titleBar.ChromeNeedsPostBlit() {
-			titleBar.Draw()
+			titleBar.DrawCaptionHoverPlates()
 		}
 		ui.DrawAnimationOverlays(doc.Root)
 		drawInteractionOverlay(windowW, windowH, doc.Root)
 		drawScreenOverlays(windowW, windowH, doc.Root)
 		rl.EndDrawing()
+
+		frameEnd := time.Now()
+		if borderless && titleBar.IsResizing() {
+			resizeHold.NoteGesture(frameEnd)
+		}
+
+		// Settle: recreate deferred RT once chrome is idle.
+		ui.SettleBorderlessClientTextures(titleBar)
 
 		if !windowShown {
 			if rl.IsWindowHidden() {

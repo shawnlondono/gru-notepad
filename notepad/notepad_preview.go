@@ -56,6 +56,9 @@ func (s *notepadScene) applyPreviewLayout() {
 			s.split.Parent().MarkDirty()
 			s.split.Parent().MarkDrawDirty()
 		}
+		// Editor was ~0 width while preview sheet was open (or vice versa).
+		// Settle next idle frame — same fix a manual resize provides.
+		s.paneSettlePending = true
 		return
 	}
 	if s.showPreview {
@@ -107,7 +110,7 @@ func (s *notepadScene) refreshPreviewForDocument() {
 		s.uiDoc.Root.Layout()
 	}
 	if s.showPreview {
-		s.rebuildPreview()
+		s.rebuildPreviewFull()
 	}
 	if s.previewVP != nil {
 		s.previewVP.MarkDirty()
@@ -124,6 +127,15 @@ func (s *notepadScene) tickPreview(dt float32) {
 	if !s.showPreview || !s.previewPending {
 		return
 	}
+	if ui.ChromeWindowMoving() {
+		s.previewTimer = 0.12
+		return
+	}
+	// Session 14: hold rebuild while typing so backspace stays on the editor.
+	if ui.TypingGestureActive() {
+		s.previewTimer = notepadPreviewDebounce
+		return
+	}
 	s.previewTimer -= dt
 	if s.previewTimer > 0 {
 		return
@@ -132,29 +144,105 @@ func (s *notepadScene) tickPreview(dt float32) {
 	s.rebuildPreview()
 }
 
-// softResetPreviewOnHostResize nudges MarkdownView when the document width changes.
-// Markdown preview demos get this via examples.FinishShellMount + simple full-width
-// layout; Notepad's SplitView pane often needs an explicit SimulateResizeReflow so
-// RichText/tables remeasure. Scoped to notepadScene — does not touch ui/preview demos.
+// syncClosedPreviewSplit keeps the editor full-width while preview is off (avoids
+// a blank second pane during window resize).
+func (s *notepadScene) syncClosedPreviewSplit() {
+	if s.showPreview || s.split == nil || s.split.Ratio == nil {
+		return
+	}
+	if s.split.Ratio.Get() >= 0.999 && (s.previewVP == nil || s.previewVP.IsHidden()) {
+		return
+	}
+	s.applyPreviewLayout()
+}
+
+// softResetPreviewOnHostResize coalesces preview reflow during host resize.
+// Session 14 contract (smooth mid-drag):
+//   - while resizing: set previewResizePending only
+//   - never SimulateResizeReflow / applyBreakpointLayout mid-gesture
+//   - on chrome idle: settle immediately (same frame — no QueueMain lag)
 func (s *notepadScene) softResetPreviewOnHostResize(doc *ui.Document) {
-	if !s.showPreview || s.mdPreview == nil || doc == nil {
+	if doc == nil {
 		return
 	}
 	w := float32(doc.Width)
 	if w <= 1 {
 		return
 	}
-	if s.lastPreviewHostW > 1 && (w > s.lastPreviewHostW+0.5 || w < s.lastPreviewHostW-0.5) {
-		s.mdPreview.SimulateResizeReflow()
-		if s.uiDoc != nil && s.uiDoc.Root != nil {
-			s.uiDoc.Root.MarkDirty()
-		}
+	prevFrame := s.prevFramePreviewHostW
+	if prevFrame <= 1 {
+		s.prevFramePreviewHostW = w
+		s.lastPreviewHostW = w
+		return
 	}
-	s.lastPreviewHostW = w
+	fdw := w - prevFrame
+	if fdw < 0 {
+		fdw = -fdw
+	}
+	s.prevFramePreviewHostW = w
+
+	if ui.ChromeWindowMoving() {
+		if fdw > 0.5 && s.showPreview && s.mdPreview != nil && !s.inSettings {
+			s.previewResizePending = true
+		}
+		return
+	}
+	// ── Gesture ended — settle ASAP ──────────────────────────────────────────
+	if !s.showPreview {
+		s.syncClosedPreviewSplit()
+	}
+	if s.breakpointLayoutPending {
+		s.breakpointLayoutPending = false
+		s.applyBreakpointLayout()
+	}
+	if s.showPreview && s.mdPreview != nil && !s.inSettings && s.previewResizePending {
+		s.flushPreviewSettleReflow()
+		return
+	}
+	if !s.previewResizePending {
+		s.lastPreviewHostW = w
+	}
+}
+
+func (s *notepadScene) tickPreviewReflow(dt float32) {
+	if !s.previewResizePending || s.mdPreview == nil || s.uiDoc == nil {
+		return
+	}
+	if ui.ChromeWindowMoving() {
+		return
+	}
+	_ = dt
+	s.flushPreviewSettleReflow()
+}
+
+// flushPreviewSettleReflow runs the 1px preview alignment pass immediately on release.
+func (s *notepadScene) flushPreviewSettleReflow() {
+	if s.mdPreview == nil || s.uiDoc == nil {
+		return
+	}
+	if ui.ChromeWindowMoving() {
+		s.previewResizePending = true
+		return
+	}
+	if !s.showPreview || s.inSettings {
+		s.previewResizePending = false
+		s.previewReflowDelay = 0
+		return
+	}
+	s.previewResizePending = false
+	s.previewReflowDelay = 0
+	s.lastPreviewHostW = float32(s.uiDoc.Width)
+	s.mdPreview.SimulateResizeReflow()
+	s.settleNotesPreviewIdle()
 }
 
 func (s *notepadScene) rebuildPreview() {
 	if s.mdPreview == nil || s.uiDoc == nil {
+		return
+	}
+	if ui.ChromeWindowMoving() || ui.TypingGestureActive() {
+		s.previewPending = true
+		s.previewTimer = notepadPreviewDebounce
 		return
 	}
 	source := s.previewEditorSource()
@@ -167,24 +255,45 @@ func (s *notepadScene) rebuildPreview() {
 		return
 	}
 	s.mdPreview.SetDocument(s.uiDoc)
-	// Full widget build only for the visible active note; other open notes warm
-	// parse cache via warmInactiveMarkdownCaches (background, no EnsureFullyBuilt).
-	s.mdPreview.SetMarkdown(source)
-	if s.showPreview {
-		s.mdPreview.EnsureFullyBuilt()
-	}
-	if s.uiDoc != nil && s.uiDoc.Root != nil {
-		s.uiDoc.Root.Layout()
-	}
-	if s.mdPreview != nil {
-		s.mdPreview.RelayoutAfterContentChange()
-	}
+	// Live edits: async parse + incremental mount (Session 14). Sync EnsureFullyBuilt
+	// on every debounce was the typing/backspace stall with preview open.
+	s.mdPreview.SetMarkdownAsync(s.uiDoc, source)
 	if s.previewVP != nil {
 		s.previewVP.MarkDirty()
 	}
-	if s.mdPreview != nil {
-		s.mdPreview.MarkIdleStable()
+}
+
+// rebuildPreviewFull synchronously materializes preview blocks (note open/switch).
+func (s *notepadScene) rebuildPreviewFull() {
+	if s.mdPreview == nil || s.uiDoc == nil {
+		return
 	}
+	if ui.ChromeWindowMoving() {
+		s.previewPending = true
+		s.previewTimer = 0.12
+		return
+	}
+	source := s.previewEditorSource()
+	if strings.TrimSpace(source) == "" {
+		s.mdPreview.SetMarkdown("")
+		s.mdPreview.MarkDirty()
+		if s.previewVP != nil {
+			s.previewVP.MarkDirty()
+		}
+		return
+	}
+	s.mdPreview.SetDocument(s.uiDoc)
+	s.mdPreview.SetMarkdown(source)
+	// Note open/switch: above-fold sync so the pane is usable; rest mounts incrementally.
+	s.mdPreview.EnsureAboveFoldBuilt()
+	if s.uiDoc.Root != nil {
+		s.uiDoc.Root.Layout()
+	}
+	s.mdPreview.RelayoutAfterContentChange()
+	if s.previewVP != nil {
+		s.previewVP.MarkDirty()
+	}
+	s.mdPreview.MarkIdleStable()
 	s.settleNotesPreviewIdle()
 }
 
@@ -242,6 +351,52 @@ func (s *notepadScene) settleNotesPreviewIdle() {
 	}
 }
 
+// settleEditorAfterShellMount remasures AutoHeight editor at real pane width and
+// clamps scroll. Early mount could wrap at a narrow width and leave a giant empty
+// region under the text (ScrollY stuck near the old bottom).
+func (s *notepadScene) settleEditorAfterShellMount() {
+	s.settleEditorAndPreviewPanes()
+}
+
+// settleEditorAndPreviewPanes remasures editor (+ preview when open) after shell
+// mount, note switch, or mobile sheet transitions. Same path a window resize uses.
+func (s *notepadScene) settleEditorAndPreviewPanes() {
+	if s.editor != nil {
+		s.editor.InvalidateAutoHeightMeasure()
+		s.editor.Layout()
+		if s.editorVP != nil {
+			s.editorVP.ScrollY = 0
+			s.editorVP.MarkDirty()
+			s.editorVP.Layout()
+			s.editorVP.MarkDrawDirty()
+		}
+		s.editor.MarkDrawDirty()
+	}
+	if s.showPreview && s.mdPreview != nil && !s.mdPreview.IsHidden() {
+		s.mdPreview.SimulateResizeReflow()
+		if s.previewVP != nil {
+			s.previewVP.ScrollY = 0
+			s.previewVP.MarkDirty()
+			s.previewVP.Layout()
+			s.previewVP.MarkDrawDirty()
+		}
+	}
+}
+
+func (s *notepadScene) flushPaneSettleIfPending() {
+	if !s.paneSettlePending {
+		return
+	}
+	if ui.ChromeWindowMoving() {
+		return
+	}
+	s.paneSettlePending = false
+	if s.uiDoc != nil && s.uiDoc.Root != nil {
+		s.uiDoc.Root.Layout()
+	}
+	s.settleEditorAndPreviewPanes()
+}
+
 func (s *notepadScene) toggleMarkdownPreview() {
 	s.showPreview = !s.showPreview
 	if s.sess != nil && s.sess.active() != nil {
@@ -252,12 +407,14 @@ func (s *notepadScene) toggleMarkdownPreview() {
 			s.applySessionPanelLayout()
 		}
 		s.refreshPreviewForDocument()
+		s.paneSettlePending = true
 		if s.uiDoc != nil {
 			s.uiDoc.QueueMain(func() { s.warmInactiveMarkdownCaches() })
 		}
 	} else {
 		s.previewPending = false
 		s.applyPreviewLayout()
+		s.paneSettlePending = true
 	}
 	s.syncRibbonToggleState()
 }

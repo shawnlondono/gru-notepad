@@ -1,14 +1,18 @@
-# Gru Notepad — Third-Party Notices
+Gru Notepad — Third-Party Notices
+==================================
 
-Copyright (c) Shawn Londono and LedoCorp.  
+Copyright (c) Shawn Londono and LedoCorp.
 Publisher: LedoCorp. Primary maintainer: Shawn Londono.
 
 Gru Notepad–authored source in this repository is licensed under the
-Mozilla Public License 2.0 — see LICENSE.
+GNU General Public License v3.0 — see LICENSE.
 
-This app **depends on** the Gru toolkit (`github.com/ledocorp/gru`). Toolkit
-third-party notices ship with that module / release (Raylib, fonts, optional
-caps such as Chroma / Hunspell / goldmark, etc.). Re-run license audits before
-each public Notepad release.
+This app **depends on** the Gru toolkit (`github.com/ledocorp/gru`), also
+GPLv3 from LedoCorp. Toolkit third-party notices ship with that module /
+release (Raylib, fonts, optional caps such as Chroma / Hunspell / goldmark,
+etc.). Re-run license audits before each public Notepad release.
+
+Commercial licensing (optional proprietary-use grant) may be offered by
+LedoCorp separately; it is not active in this repository today.
 
 This is not legal advice.

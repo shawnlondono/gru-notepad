@@ -147,6 +147,7 @@ func (sess *notepadSession) switchTo(s *notepadScene, id string) {
 	}
 	s.applyEditorSyntax()
 	s.refreshPreviewForDocument()
+	s.paneSettlePending = true
 	s.refreshChrome()
 	s.rebuildSessionList()
 	s.persistOpenDocs()
@@ -181,6 +182,7 @@ func (s *notepadScene) dismissOpenNotesAfterPick() {
 		p.ShowSessionPanel = false
 		_ = s.store.SavePrefs(p)
 	}
+	s.paneSettlePending = true
 	s.focusEditor()
 }
 

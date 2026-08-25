@@ -29,3 +29,11 @@ func TestNotepadPortableDataDirMissingDict(t *testing.T) {
 		t.Fatal("expected empty without dict layout")
 	}
 }
+
+func portableDataDirForRoot(exeDir string) string {
+	aff := filepath.Join(exeDir, "dict", "en_US", "en_US.aff")
+	if st, err := os.Stat(aff); err != nil || st.IsDir() {
+		return ""
+	}
+	return filepath.Join(exeDir, "data")
+}

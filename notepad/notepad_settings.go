@@ -1,4 +1,4 @@
-// Gru Notepad in-shell settings.
+// Gru Notepad — in-shell settings (desktop settings surface).
 package notepad
 
 import (
@@ -20,9 +20,11 @@ func (s *notepadScene) buildNotepadSettingsPage() *ui.Container {
 	vp.SetFlexGrow(1)
 	vp.Gap = 20
 
-	vp.AddChild(settingsPageTitleRow("notepad-settings-page-title", "Settings", func() {
+	titleRow, back := settingsPageTitleRow("notepad-settings-page-title", "Settings", func() {
 		s.closeSettingsPage()
-	}))
+	})
+	s.settingsBack = back
+	vp.AddChild(titleRow)
 
 	intro := ui.NewLabel("notepad-settings-intro",
 		"Saved defaults apply on startup and update this session when changed.",
@@ -44,6 +46,7 @@ func (s *notepadScene) buildNotepadSettingsPage() *ui.Container {
 
 	appearanceOpts := []string{"System", "Light", "Dark"}
 	appearanceDD := ui.NewDropdown("notepad-set-appearance", appearanceOpts, notepadAppearanceIndex(s.appearanceMode), 0, 0, 168, 36)
+	s.settingsAppearanceDD = appearanceDD
 	s.appearanceIdx = appearanceDD.SelectedIndex
 	chromaOpts := notepadChromaStyleOptions()
 	chromaDD := ui.NewDropdown("notepad-set-chroma", chromaOpts, notepadChromaStyleIndex(s.chromaStyleName), 0, 0, 168, 36)
@@ -82,11 +85,15 @@ func (s *notepadScene) buildNotepadSettingsPage() *ui.Container {
 func (s *notepadScene) wireSettingsToggles() {
 	var applying bool
 	apply := func() {
-		if s.setWrapTog == nil || applying {
+		if s.setWrapTog == nil || applying || s.settingsSyncing {
 			return
 		}
 		applying = true
 		defer func() { applying = false }()
+
+		prevAppearance := s.appearanceMode
+		prevChroma := s.chromaStyleName
+
 		s.wordWrap = s.setWrapTog.Value.Get()
 		s.showStatus = s.setStatusTog.Value.Get()
 		s.syntaxHighlight = s.setSyntaxTog.Value.Get()
@@ -123,7 +130,6 @@ func (s *notepadScene) wireSettingsToggles() {
 			s.editor.SetWordWrap(s.wordWrap)
 		}
 		s.toggleStatusBarApply(s.showStatus)
-		s.applyNotepadThemePrefs()
 		s.applyEditorSyntax()
 		s.applyEditorSpellCheck()
 		s.applySessionPanelLayout()
@@ -132,6 +138,15 @@ func (s *notepadScene) wireSettingsToggles() {
 		s.syncRibbonFindMode()
 		s.persistQuickPrefs()
 		s.refreshChrome()
+
+		themeChanged := s.appearanceMode != prevAppearance || s.chromaStyleName != prevChroma
+		if themeChanged && s.uiDoc != nil {
+			if s.settingsAppearanceDD != nil && s.settingsAppearanceDD.IsOpen() {
+				s.settingsAppearanceDD.ClearOverlayPointerState()
+			}
+			doc := s.uiDoc
+			doc.QueueMain(func() { s.applyNotepadThemePrefs() })
+		}
 	}
 	s.setWrapTog.Value.Subscribe(func() { apply() })
 	s.setStatusTog.Value.Subscribe(func() { apply() })
@@ -154,6 +169,8 @@ func (s *notepadScene) syncSettingsToggles() {
 	if s.setWrapTog == nil {
 		return
 	}
+	s.settingsSyncing = true
+	defer func() { s.settingsSyncing = false }()
 	s.setWrapTog.Value.Set(s.wordWrap)
 	s.setStatusTog.Value.Set(s.showStatus)
 	s.setSyntaxTog.Value.Set(s.syntaxHighlight)
@@ -200,6 +217,10 @@ func (s *notepadScene) closeSettingsPage() {
 	s.workArea.Show()
 	s.toggleStatusBarApply(s.showStatus)
 	s.applyChromeLayout()
+	if s.settingsThemePending && s.showPreview {
+		s.settingsThemePending = false
+		s.rebuildPreview()
+	}
 	if s.workArea.Parent() != nil {
 		s.workArea.Parent().MarkDirty()
 	}
@@ -219,6 +240,56 @@ func (s *notepadScene) toggleStatusBarApply(show bool) {
 		s.statusBar.Hide()
 	}
 	s.refreshStatus()
+}
+
+func (s *notepadScene) handleSettingsPointer() {
+	// Keep File tab selected so ribbon Back stays visible if the user clicked
+	// another ribbon tab while settings is open.
+	if s.ribbon != nil {
+		s.ribbon.SelectRibbonTabForItem("back")
+	}
+	clearDrops := func() {
+		if s.settingsAppearanceDD != nil && s.settingsAppearanceDD.IsOpen() {
+			s.settingsAppearanceDD.ClearOverlayPointerState()
+		}
+	}
+	tryBack := func(btn *ui.IconButton) bool {
+		if btn == nil || btn.IsHidden() {
+			return false
+		}
+		b := btn.Bounds()
+		if b.Width < 1 || b.Height < 1 {
+			return false
+		}
+		mouse := rl.GetMousePosition()
+		pending := ui.PointerClickPending()
+		pos := ui.PointerClickPosition()
+		hit := rl.CheckCollisionPointRec(mouse, b)
+		if pending {
+			hit = hit || rl.CheckCollisionPointRec(pos, b)
+		}
+		if !hit {
+			return false
+		}
+		// Prefer latched click (deep idle FPS). Also accept raw press so Back works
+		// when ScenePointerBlocked left IconButton OnClick silent.
+		consumed := ui.PointerClickConsume(b)
+		pressed := rl.IsMouseButtonPressed(rl.MouseLeftButton) && rl.CheckCollisionPointRec(mouse, b)
+		if !consumed && !pressed {
+			if ui.ScenePointerBlocked() && pending && rl.CheckCollisionPointRec(pos, b) {
+				ui.PointerClickMarkUsed()
+			} else {
+				return false
+			}
+		}
+		clearDrops()
+		s.closeSettingsPage()
+		return true
+	}
+	if tryBack(s.settingsBack) {
+		return
+	}
+	_ = tryBack(s.ribbonBack)
 }
 
 func (s *notepadScene) handleSettingsKeys() {

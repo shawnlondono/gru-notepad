@@ -60,11 +60,8 @@ func (s *notepadScene) preloadNotepadRibbonIcons() {
 		ui.PhosphorCodeBox,
 		ui.PhosphorDotsThreeVertical,
 	}
-	// Warm chrome icons. Prefer EnsureLoadedMany when available on newer GRU;
-	// v0.7.1 only has EnsureLoaded (per-glyph atlas rebuild).
-	for _, name := range icons {
-		ui.Phosphor.EnsureLoaded(name, ui.PhosphorRegular)
-	}
+	// One atlas rebuild — N× EnsureLoaded was rebuilding the Remix TTF each glyph.
+	ui.Phosphor.EnsureLoadedMany(icons, ui.PhosphorRegular)
 }
 
 func (s *notepadScene) buildNotepadRibbon() *ui.Toolbar {
@@ -104,6 +101,11 @@ func (s *notepadScene) buildNotepadRibbon() *ui.Toolbar {
 	tb.AddPhosphorIconButton(file.ID, "settings", ui.PhosphorSettings3, "Settings", "Settings", func() { s.showSettingsPage() })
 	// CaretLeft — distinct from Edit→Undo (ArrowGoBack) so Settings exit is obvious.
 	tb.AddPhosphorIconButton(file.ID, "back", ui.PhosphorCaretLeft, "Back", "Back to editor", func() { s.closeSettingsPage() })
+	if w := tb.Widget("back"); w != nil {
+		if ib, ok := w.(*ui.IconButton); ok {
+			s.ribbonBack = ib
+		}
+	}
 
 	editTab := tb.AddRibbonTab("Edit")
 	clipboard := tb.AddSection(editTab, "notepad-ribbon-clipboard", "Clipboard")
@@ -239,11 +241,9 @@ func (s *notepadScene) syncRibbonFileButtons() {
 	}
 	s.ribbon.SetItemSuppressed("back", !in)
 	if in {
-		// Back lives on the File tab; switch there if Settings was opened from
-		// another tab. Compatible with GRU v0.7.1 (no SelectRibbonTabForItem).
-		s.ribbon.ActiveGroup.Set(0)
-		s.ribbon.SetItemSuppressed("back", true)
-		s.ribbon.SetItemSuppressed("back", false)
+		// Back lives on the File tab; without this it stays hidden if Settings was
+		// opened from Syntax/View/etc.
+		s.ribbon.SelectRibbonTabForItem("back")
 	}
 	s.ribbon.MarkDirty()
 }
@@ -335,9 +335,23 @@ func (s *notepadScene) reconcileChrome() {
 	}
 }
 
+func (s *notepadScene) applyBreakpointLayout() {
+	s.applyChromeLayout()
+	s.applyResponsivePanelLayout()
+	s.settleNotesPreviewIdle()
+	if s.showPreview && s.mdPreview != nil && !s.inSettings {
+		s.previewResizePending = true
+		s.previewReflowDelay = 0
+	}
+}
+
 func (s *notepadScene) wireChromeResponsive() {
 	ui.ActiveBreakpoint.Subscribe(func() {
-		s.applyChromeLayout()
-		s.applyResponsivePanelLayout()
+		bp := ui.ActiveBreakpoint.Get()
+		if bp == s.lastAppliedBreakpoint {
+			return
+		}
+		s.lastAppliedBreakpoint = bp
+		s.breakpointLayoutPending = true
 	})
 }
