@@ -517,8 +517,8 @@ func (s *notepadScene) doCloseNote() {
 }
 
 func (s *notepadScene) pickOpen() {
-	// Android SAF must be async — blocking the NativeActivity loop ANRs.
-	examples.StartTextFileOpen(func(path string, err error) {
+	// Android SAF is async; desktop runs the native picker then onDone.
+	notepadStartTextFileOpen(func(path string, err error) {
 		if errors.Is(err, examples.ErrFileDialogCancelled) || errors.Is(err, examples.ErrFileDialogUnavailable) {
 			return
 		}
@@ -633,7 +633,7 @@ func (s *notepadScene) doSave(saveAs bool) {
 	if s.path == "" || saveAs {
 		content := []byte(s.editor.Text.Get())
 		name := s.saveDefaultFilename(saveAs)
-		examples.StartTextFileSave(name, content, func(path string, err error) {
+		notepadStartTextFileSave(name, content, func(path string, err error) {
 			if errors.Is(err, examples.ErrFileDialogCancelled) || errors.Is(err, examples.ErrFileDialogUnavailable) {
 				return
 			}
@@ -1204,7 +1204,7 @@ func (s *notepadScene) handleNotepadPointer(doc *ui.Document) {
 	if s.inSettings {
 		return
 	}
-	if !ui.PlatformWindowFocused() || ui.IsContextMenuOpen() || ui.OverlayBlocksSceneInput() ||
+	if !notepadWindowFocused() || ui.IsContextMenuOpen() || ui.OverlayBlocksSceneInput() ||
 		ui.ScenePointerBlocked() {
 		return
 	}
@@ -1225,16 +1225,16 @@ func (s *notepadScene) handleNotepadPointer(doc *ui.Document) {
 		rl.CheckCollisionPointRec(mouse, s.editorVP.Bounds()) {
 		if s.editor != nil && !s.editor.Disabled {
 			if rl.IsMouseButtonPressed(rl.MouseRightButton) {
-				ui.ArmIMEForUserGesture()
+				notepadArmIME()
 				doc.SetFocus(s.editor)
 				s.editor.ShowContextMenuAt(mouse)
 			} else if rl.IsMouseButtonPressed(rl.MouseLeftButton) || ui.PointerClickPending() {
-				ui.ArmIMEForUserGesture()
+				notepadArmIME()
 				if doc.Focused != s.editor {
 					doc.SetFocus(s.editor)
 				} else {
 					// Re-assert IME when already focused (Android soft keyboard).
-					ui.PlatformShowSoftInput()
+					notepadShowSoftInput()
 				}
 				s.editor.RestartCaretCycle()
 			}

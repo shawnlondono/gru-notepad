@@ -95,7 +95,7 @@ func (s *notepadScene) syncMobileRibbonHeight() {
 		want = notepadMobileRibbonH
 		if ui.AndroidGLES() {
 			// Density-independent tool strip (docs/ANDROID_DENSITY.md).
-			want = ui.Dp(ui.PhoneToolStripHDp)
+			want = notepadToolStripHeight()
 		}
 	}
 	b := s.ribbon.Bounds()
@@ -179,11 +179,7 @@ func (s *notepadScene) pinMobileBottomNavBounds(doc *ui.Document) {
 	if h < 1 {
 		h = ui.BottomNavCompactHeight()
 		if !s.bottomNav.Compact {
-			if ui.AndroidGLES() {
-				h = ui.Dp(ui.PhoneBottomNavHDp)
-			} else {
-				h = 64 * ui.PhoneChromeScale()
-			}
+			h = notepadBottomNavHeight()
 		}
 	}
 	// Bounds are screen-absolute; content band starts at ChromeTop.
@@ -192,38 +188,10 @@ func (s *notepadScene) pinMobileBottomNavBounds(doc *ui.Document) {
 	cur := s.bottomNav.Bounds()
 	if abs32(cur.X-want.X) > 0.5 || abs32(cur.Y-want.Y) > 0.5 ||
 		abs32(cur.Width-want.Width) > 0.5 || abs32(cur.Height-want.Height) > 0.5 {
-		// PinScreenBounds: avoid MarkDirty→Layout immediately overwriting the pin.
-		s.bottomNav.PinScreenBounds(want)
+		// Android: PinScreenBounds avoids MarkDirty→Layout clobber; desktop SetBounds.
+		notepadPinNodeBounds(s.bottomNav, want)
 		s.bottomNav.Layout()
 	}
-}
-
-// SyncAndroidChromeBand keeps the edge-to-edge shell and BottomNav on the
-// ChromeTop content band. Call after Layout and before Update so hit-testing
-// matches what will be drawn.
-func (s *notepadScene) SyncAndroidChromeBand(doc *ui.Document) {
-	if !ui.AndroidGLES() || doc == nil || doc.Root == nil {
-		return
-	}
-	// Content band must sit at ChromeTop so flex BottomNav Y matches draw/hit
-	// (docs/ANDROID_DENSITY.md). Prefer Document helper when sizes are known.
-	if doc.Width > 0 && doc.Height > 0 {
-		fullH := int32(doc.ChromeTop()) + doc.Height + int32(doc.ChromeBottom())
-		if fullH < doc.Height {
-			fullH = doc.Height
-		}
-		doc.EnsureContentBand(doc.Width, fullH)
-	} else {
-		band := rl.NewRectangle(0, doc.ChromeTop(), float32(doc.Width), float32(doc.Height))
-		for _, ch := range doc.Root.Children() {
-			b := ch.Bounds()
-			if abs32(b.Y-band.Y) > 0.5 || abs32(b.Height-band.Height) > 0.5 ||
-				abs32(b.Width-band.Width) > 0.5 {
-				ch.SetBounds(band)
-			}
-		}
-	}
-	s.pinMobileBottomNavBounds(doc)
 }
 
 func abs32(v float32) float32 {
