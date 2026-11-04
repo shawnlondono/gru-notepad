@@ -32,6 +32,10 @@ func notepadNavToRibbonTab(navIdx int) int {
 }
 
 func (s *notepadScene) useMobileBottomNav() bool {
+	if ui.AndroidGLES() {
+		// Phone framebuffer (~1080) maps to BreakpointLG; always use mobile chrome.
+		return true
+	}
 	if !s.mobileBottomNav {
 		return false
 	}
@@ -51,13 +55,15 @@ func (s *notepadScene) buildMobileBottomNav() *ui.BottomNavigationBar {
 	ui.Phosphor.EnsureLoadedMany(icons, ui.PhosphorFill)
 	ui.Phosphor.EnsureLoadedMany(icons, ui.PhosphorRegular)
 	nav := ui.NewBottomNavigationBar("notepad-mobile-nav", []ui.BottomNavItem{
-		{Phosphor: ui.PhosphorHome2},
-		{Phosphor: ui.PhosphorEditBox},
-		{Phosphor: ui.PhosphorBookRead},
-		{Phosphor: ui.PhosphorSearch},
-		{Phosphor: ui.PhosphorCodeBox},
+		{Phosphor: ui.PhosphorHome2, Label: "Home"},
+		{Phosphor: ui.PhosphorEditBox, Label: "Edit"},
+		{Phosphor: ui.PhosphorBookRead, Label: "View"},
+		{Phosphor: ui.PhosphorSearch, Label: "Search"},
+		{Phosphor: ui.PhosphorCodeBox, Label: "Syntax"},
 	}, ui.NewSignal(notepadNavHome), 0, 0, 0, 0)
-	nav.Compact = true
+	// Compact icons-only is too small on phone framebuffer pixels; labeled bar
+	// matches App Shell and keeps 56px Android icon slots.
+	nav.Compact = false
 	nav.SetZIndex(120)
 	nav.Hide()
 	nav.OnChange = func(i int) {
@@ -87,6 +93,10 @@ func (s *notepadScene) syncMobileRibbonHeight() {
 	want := notepadRibbonH
 	if s.useMobileBottomNav() {
 		want = notepadMobileRibbonH
+		if ui.AndroidGLES() {
+			// Density-independent tool strip (docs/ANDROID_DENSITY.md).
+			want = ui.Dp(ui.PhoneToolStripHDp)
+		}
 	}
 	b := s.ribbon.Bounds()
 	if b.Height < want-0.5 || b.Height > want+0.5 {
@@ -101,6 +111,9 @@ func (s *notepadScene) applyMobileRibbonChrome() {
 		return
 	}
 	mobile := s.useMobileBottomNav()
+	s.ribbon.Show()
+	// Bottom nav owns Home/Edit/Search/View/Syntax — hide ribbon tab strip so it
+	// cannot paint over Open Notes (the earlier "mixing views" bug).
 	s.ribbon.SetHideRibbonTabs(mobile)
 	s.ribbon.SetHideRibbonSectionLabels(mobile)
 	s.syncMobileRibbonHeight()
@@ -115,7 +128,9 @@ func (s *notepadScene) updateMobileBottomNav(doc *ui.Document) {
 	if s.bottomNav == nil || doc == nil {
 		return
 	}
-	if s.navMountFrames < 4 {
+	// Desktop waits a few frames so flex can settle before revealing the bar.
+	// Android must show immediately — deferred Hide left the first taps unhandled.
+	if !ui.AndroidGLES() && s.navMountFrames < 4 {
 		s.navMountFrames++
 		if !s.bottomNav.IsHidden() {
 			s.bottomNav.Hide()
@@ -123,6 +138,7 @@ func (s *notepadScene) updateMobileBottomNav(doc *ui.Document) {
 		}
 		return
 	}
+	s.navMountFrames = 4
 	if !s.useMobileBottomNav() || s.inSettings {
 		if !s.bottomNav.IsHidden() {
 			s.bottomNav.Hide()
@@ -154,20 +170,60 @@ func (s *notepadScene) reflowAfterBottomNavToggle(doc *ui.Document) {
 }
 
 // pinMobileBottomNavBounds snaps the compact bar to the client bottom edge so a
-// partial flex pass cannot leave it at 0×0 or a wrong Y for even one draw.
+// partial flex pass cannot leave it at 0×0 or a wrong Y for even one draw/hit.
 func (s *notepadScene) pinMobileBottomNavBounds(doc *ui.Document) {
 	if s.bottomNav == nil || doc == nil || s.bottomNav.IsHidden() {
 		return
 	}
-	h := ui.BottomNavCompactHeight()
-	want := rl.NewRectangle(0, float32(doc.Height)-h, float32(doc.Width), h)
+	h := s.bottomNav.Bounds().Height
+	if h < 1 {
+		h = ui.BottomNavCompactHeight()
+		if !s.bottomNav.Compact {
+			if ui.AndroidGLES() {
+				h = ui.Dp(ui.PhoneBottomNavHDp)
+			} else {
+				h = 64 * ui.PhoneChromeScale()
+			}
+		}
+	}
+	// Bounds are screen-absolute; content band starts at ChromeTop.
+	y := doc.ChromeTop() + float32(doc.Height) - h
+	want := rl.NewRectangle(0, y, float32(doc.Width), h)
 	cur := s.bottomNav.Bounds()
 	if abs32(cur.X-want.X) > 0.5 || abs32(cur.Y-want.Y) > 0.5 ||
 		abs32(cur.Width-want.Width) > 0.5 || abs32(cur.Height-want.Height) > 0.5 {
-		s.bottomNav.SetBounds(want)
+		// PinScreenBounds: avoid MarkDirty→Layout immediately overwriting the pin.
+		s.bottomNav.PinScreenBounds(want)
 		s.bottomNav.Layout()
-		s.bottomNav.MarkDrawDirty()
 	}
+}
+
+// SyncAndroidChromeBand keeps the edge-to-edge shell and BottomNav on the
+// ChromeTop content band. Call after Layout and before Update so hit-testing
+// matches what will be drawn.
+func (s *notepadScene) SyncAndroidChromeBand(doc *ui.Document) {
+	if !ui.AndroidGLES() || doc == nil || doc.Root == nil {
+		return
+	}
+	// Content band must sit at ChromeTop so flex BottomNav Y matches draw/hit
+	// (docs/ANDROID_DENSITY.md). Prefer Document helper when sizes are known.
+	if doc.Width > 0 && doc.Height > 0 {
+		fullH := int32(doc.ChromeTop()) + doc.Height + int32(doc.ChromeBottom())
+		if fullH < doc.Height {
+			fullH = doc.Height
+		}
+		doc.EnsureContentBand(doc.Width, fullH)
+	} else {
+		band := rl.NewRectangle(0, doc.ChromeTop(), float32(doc.Width), float32(doc.Height))
+		for _, ch := range doc.Root.Children() {
+			b := ch.Bounds()
+			if abs32(b.Y-band.Y) > 0.5 || abs32(b.Height-band.Height) > 0.5 ||
+				abs32(b.Width-band.Width) > 0.5 {
+				ch.SetBounds(band)
+			}
+		}
+	}
+	s.pinMobileBottomNavBounds(doc)
 }
 
 func abs32(v float32) float32 {

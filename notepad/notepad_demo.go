@@ -372,8 +372,15 @@ func (s *notepadScene) Build(doc *ui.Document) {
 		{Weight: 10, Align: ui.LabelAlignRight, Nodes: []ui.Node{s.statusEnc}},
 	})
 
-	root.AddChild(s.menuBar)
-	root.AddChild(s.ribbon)
+	if ui.AndroidGLES() {
+		// Phone: no MenuBar — bottom nav owns tab switching. Ribbon stays in-tree
+		// for tool buttons (tabs hidden via SetHideRibbonTabs).
+		s.menuBar.Hide()
+		root.AddChild(s.ribbon)
+	} else {
+		root.AddChild(s.menuBar)
+		root.AddChild(s.ribbon)
+	}
 	root.AddChild(body)
 	root.AddChild(s.statusBar)
 	s.bottomNav = s.buildMobileBottomNav()
@@ -510,21 +517,27 @@ func (s *notepadScene) doCloseNote() {
 }
 
 func (s *notepadScene) pickOpen() {
-	path, err := examples.PickTextFileOpen()
-	if errors.Is(err, examples.ErrFileDialogCancelled) || errors.Is(err, examples.ErrFileDialogUnavailable) {
-		return
-	}
-	if err != nil {
-		ui.ShowToast("Open failed: "+err.Error(), ui.ToastError, 3*time.Second)
-		return
-	}
-	// Defer past the native dialog return so the next frame drains layout before open.
-	if s.uiDoc != nil {
+	// Android SAF must be async — blocking the NativeActivity loop ANRs.
+	examples.StartTextFileOpen(func(path string, err error) {
+		if errors.Is(err, examples.ErrFileDialogCancelled) || errors.Is(err, examples.ErrFileDialogUnavailable) {
+			return
+		}
+		if err != nil {
+			if s.uiDoc != nil {
+				msg := err.Error()
+				s.uiDoc.QueueMain(func() {
+					ui.ShowToast("Open failed: "+msg, ui.ToastError, 3*time.Second)
+				})
+			}
+			return
+		}
 		openPath := path
-		s.uiDoc.QueueMain(func() { s.doOpen(openPath) })
-		return
-	}
-	s.doOpen(path)
+		if s.uiDoc != nil {
+			s.uiDoc.QueueMain(func() { s.doOpen(openPath) })
+			return
+		}
+		s.doOpen(openPath)
+	})
 }
 
 func notepadNormalizeText(s string) string {
@@ -618,15 +631,27 @@ func (s *notepadScene) doSave(saveAs bool) {
 		s.sess.flushActive(s)
 	}
 	if s.path == "" || saveAs {
-		path, err := examples.PickTextFileSave(s.saveDefaultFilename(saveAs))
-		if errors.Is(err, examples.ErrFileDialogCancelled) || errors.Is(err, examples.ErrFileDialogUnavailable) {
-			return
-		}
-		if err != nil {
-			ui.ShowToast("Save failed: "+err.Error(), ui.ToastError, 3*time.Second)
-			return
-		}
-		s.path = path
+		content := []byte(s.editor.Text.Get())
+		name := s.saveDefaultFilename(saveAs)
+		examples.StartTextFileSave(name, content, func(path string, err error) {
+			if errors.Is(err, examples.ErrFileDialogCancelled) || errors.Is(err, examples.ErrFileDialogUnavailable) {
+				return
+			}
+			finish := func() {
+				if err != nil {
+					ui.ShowToast("Save failed: "+err.Error(), ui.ToastError, 3*time.Second)
+					return
+				}
+				s.path = path
+				s.writeFile()
+			}
+			if s.uiDoc != nil {
+				s.uiDoc.QueueMain(finish)
+				return
+			}
+			finish()
+		})
+		return
 	}
 	s.writeFile()
 }
@@ -1118,6 +1143,13 @@ func (s *notepadScene) OnUpdate(doc *ui.Document, dt float32) {
 		s.deferSpellInit = false
 		s.applyEditorSpellCheck()
 	}
+	// Android: keep editor focused so hardware/ADB keyboard input reaches it
+	// even before the first successful tap (chrome hit-testing was a frame late).
+	if ui.AndroidGLES() && doc != nil && !s.inSettings && !s.editor.Disabled {
+		if doc.Focused != s.editor {
+			doc.SetFocus(s.editor)
+		}
+	}
 	s.handleSettingsKeys()
 	if s.inSettings {
 		s.handleSettingsPointer()
@@ -1172,27 +1204,37 @@ func (s *notepadScene) handleNotepadPointer(doc *ui.Document) {
 	if s.inSettings {
 		return
 	}
-	if !rl.IsWindowFocused() || ui.IsContextMenuOpen() || ui.OverlayBlocksSceneInput() ||
+	if !ui.PlatformWindowFocused() || ui.IsContextMenuOpen() || ui.OverlayBlocksSceneInput() ||
 		ui.ScenePointerBlocked() {
 		return
 	}
 	mouse := rl.GetMousePosition()
+	if ui.PointerClickPending() {
+		mouse = ui.PointerClickPosition()
+	}
 	if s.bottomNav != nil && !s.bottomNav.IsHidden() &&
 		rl.CheckCollisionPointRec(mouse, s.bottomNav.Bounds()) {
 		return
 	}
-	if s.useMobileBottomNav() && mouse.Y >= float32(doc.Height)-shellFooterLift {
+	// Footer band is screen-absolute (ChromeTop + content height).
+	footerY := doc.ChromeTop() + float32(doc.Height) - shellFooterLift
+	if s.useMobileBottomNav() && mouse.Y >= footerY {
 		return
 	}
 	if s.editorVP != nil && !s.editorVP.IsHidden() &&
 		rl.CheckCollisionPointRec(mouse, s.editorVP.Bounds()) {
 		if s.editor != nil && !s.editor.Disabled {
 			if rl.IsMouseButtonPressed(rl.MouseRightButton) {
+				ui.ArmIMEForUserGesture()
 				doc.SetFocus(s.editor)
 				s.editor.ShowContextMenuAt(mouse)
-			} else if rl.IsMouseButtonPressed(rl.MouseLeftButton) {
+			} else if rl.IsMouseButtonPressed(rl.MouseLeftButton) || ui.PointerClickPending() {
+				ui.ArmIMEForUserGesture()
 				if doc.Focused != s.editor {
 					doc.SetFocus(s.editor)
+				} else {
+					// Re-assert IME when already focused (Android soft keyboard).
+					ui.PlatformShowSoftInput()
 				}
 				s.editor.RestartCaretCycle()
 			}

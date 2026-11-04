@@ -20,3 +20,17 @@ Thumbs.db
 
 # Showcase clips live on X — do not ship large MP4s in git
 media/preview/*.mp4
+
+# Local symlink to ../GRU/assets for toolkit fonts (dev only)
+/assets
+
+# Android (built .so / Gradle / staged toolkit assets / local SDK)
+.android/
+packaging/android/**/libs/
+packaging/android/**/build/
+packaging/android/**/.gradle/
+packaging/android/local.properties
+packaging/android/**/assets/fonts/
+packaging/android/**/assets/icons/
+*.so
+resource.syso.android-park

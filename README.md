@@ -38,7 +38,28 @@ go run ./cmd/grunotepad
 go build -o GruNotepad.exe ./cmd/grunotepad
 ```
 
+```bash
+# Linux — toolkit fonts resolve via assets/ (cwd or package layout).
+# When co-developing against a local GRU checkout:
+#   replace github.com/ledocorp/gru => ../GRU   in go.mod
+#   ln -sfn ../GRU/assets ./assets
+go run ./cmd/grunotepad
+go build -o dist/GruNotepad ./cmd/grunotepad
+
+# Android — beta host (JSON store; requires local GRU android-experience until published):
+#   replace github.com/ledocorp/gru => ../GRU   in go.mod (do not commit)
+#   sibling checkout of ledocorp/GRU on branch android-experience
+source scripts/android/env.sh
+./scripts/android/assemble-notepad.sh x86_64
+adb install -r dist/android/notepad-debug.apk
+adb shell am start -n org.ledocorp.gru.notepad/.MainActivity
+```
+
+See [`packaging/android/README.md`](packaging/android/README.md). Persistence on Android is JSON (`store.json`); desktop keeps sqlite.
+
 Spell check expects Hunspell dictionaries beside the binary in release zips (`dict/en_US/`).
+
+Linux chrome / Wayland notes live in the toolkit: [`docs/architecture/linux.md`](https://github.com/ledocorp/GRU/blob/main/docs/architecture/linux.md) (also on the `linux-experience` branch while in progress).
 
 ---
 

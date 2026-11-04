@@ -16,6 +16,7 @@ const (
 
 const notepadRibbonH float32 = 128
 const notepadMobileRibbonH float32 = 84
+// Android tool-strip height comes from ui.Dp(PhoneToolStripHDp) at runtime.
 
 func (s *notepadScene) preloadNotepadRibbonIcons() {
 	icons := []string{
@@ -302,8 +303,14 @@ func (s *notepadScene) reconcileChrome() {
 	if mobile {
 		if s.menuBar != nil {
 			s.menuBar.Hide()
+			if ui.AndroidGLES() {
+				if p := s.menuBar.Parent(); p != nil {
+					p.RemoveChild(s.menuBar.ID())
+				}
+			}
 		}
 		if s.ribbon != nil {
+			// Tools stay visible; applyMobileRibbonChrome hides the tab strip.
 			s.ribbon.Show()
 		}
 	} else {

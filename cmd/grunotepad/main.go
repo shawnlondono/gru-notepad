@@ -1,3 +1,5 @@
+//go:build !android
+
 // grunotepad is the thin window host for Gru Notepad.
 package main
 
@@ -28,8 +30,11 @@ func main() {
 	defer stopInstance()
 
 	rl.SetTraceLogLevel(rl.LogWarning)
-	rl.SetConfigFlags(uint32(rl.FlagMsaa4xHint | rl.FlagVsyncHint |
-		rl.FlagWindowResizable | rl.FlagWindowUndecorated | rl.FlagWindowHidden))
+	ui.PrepareLinuxWindowHints()
+	notepadFlags := uint32(rl.FlagMsaa4xHint | rl.FlagVsyncHint |
+		rl.FlagWindowResizable | rl.FlagWindowUndecorated | rl.FlagWindowHidden)
+	notepadFlags |= ui.DesktopHiDPIWindowFlag()
+	rl.SetConfigFlags(notepadFlags)
 	rl.InitWindow(initW, initH, "Gru Notepad")
 	appinstance.RaiseRunningInstance = raiseRunningWindow
 	defer rl.CloseWindow()
@@ -41,6 +46,11 @@ func main() {
 	ui.RefreshDisplayScale()
 	ui.InitDisplayAwareAtlases()
 	ui.SetTextEngineMode(ui.TextEngineShaped)
+	// Whole-run outline strikes (sharp on Wayland). Opt out: GRU_SHAPED_GLYPH_CACHE=0.
+	if os.Getenv("GRU_SHAPED_GLYPH_CACHE") != "0" && os.Getenv("GORY_SHAPED_GLYPH_CACHE") != "0" {
+		ui.PreferShapedGlyphCache(true)
+	}
+	ui.SyncSupersamplingToContentScale()
 	defer ui.UnloadSDFFonts()
 	defer ui.Icons.UnloadAll()
 
@@ -135,7 +145,7 @@ func main() {
 		doc.DrainQueue()
 		bg = ui.WindowChromeFill()
 
-		nw, nh := int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight())
+		nw, nh := ui.ReadClientSize()
 		if nw < 1 {
 			nw = windowW
 		}
@@ -324,6 +334,14 @@ func main() {
 			windowShown = true
 			raiseRunningWindow()
 			appicon.ReapplyWindowIcon()
+			ui.RefreshDisplayScale()
+			if ui.ApplyDisplayAwareSupersampling(windowW, windowH) {
+				doc.UnloadCache()
+			}
+			if w, h, ok := ui.SyncBorderlessClientIfChanged(doc, titleBar, windowW, windowH); ok {
+				windowW, windowH = w, h
+			}
+			doc.InvalidatePaint()
 		}
 	}
 }

@@ -1,3 +1,5 @@
+//go:build !android
+
 // Gru Notepad — SQLite prefs and recent files (UI persistence baselines).
 // See docs/SQLITE_UI_PERSISTENCE.md.
 package notepad
@@ -5,78 +7,15 @@ package notepad
 import (
 	"database/sql"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/ledocorp/gru/ui"
-
-	_ "modernc.org/sqlite"
 )
-
-const (
-	notepadSchemaVersion = 4
-	notepadRecentMax     = 20
-	notepadOpenDocsMax   = 20
-)
-
-// NotepadPrefs holds persisted scene preferences.
-type NotepadPrefs struct {
-	WordWrap          bool
-	ShowStatus        bool
-	SyntaxHighlight   bool
-	SyntaxLangPick    string
-	DefaultZoom       float32
-	ShowSessionPanel  bool
-	MobilePanelSheets bool // tablet/mobile: notes + preview as full-screen sheets
-	MobileBottomNav   bool // tablet/mobile: icon bottom nav instead of top chrome
-	SpellCheck        bool
-	ChromeMode        string // "menubar" (default) or "ribbon"
-	AppearanceMode    string // light, dark, system
-	ChromaStyle       string // Chroma styles registry name
-	FindUseModal      bool   // find opens modal; when false, ribbon search bar is used
-	EditorBackground  string // "r,g,b,a" or empty for theme default
-}
-
-// OpenDocRow is one persisted open document (A4 session restore).
-type OpenDocRow struct {
-	DocID       string
-	Path        string
-	DisplayName string
-	SortOrder   int
-	ShowPreview bool
-	IsActive    bool
-	BufferText  string
-	SavedText   string // last saved snapshot; buffer_text != saved_text => dirty
-}
 
 // NotepadStore provides prefs and recent-file persistence for Gru Notepad.
 type NotepadStore struct {
 	db *sql.DB
-}
-
-// OpenNotepadStore opens (or creates) the app database for this install.
-func OpenNotepadStore() (*NotepadStore, error) {
-	appDir, err := notepadDataDir()
-	if err != nil {
-		return nil, err
-	}
-	dbPath := filepath.Join(appDir, "notepad.db")
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
-	if err != nil {
-		return nil, err
-	}
-	s := &NotepadStore{db: db}
-	if err := s.migrate(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	// Re-seed when welcome pack version bumps (even if schema is already current).
-	if err := s.EnsureWelcomePack(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return s, nil
 }
 
 func (s *NotepadStore) Close() error {
@@ -281,20 +220,6 @@ func (s *NotepadStore) SavePrefs(p NotepadPrefs) error {
 	return s.setPref("editor_background", p.EditorBackground)
 }
 
-func defaultNotepadPrefs() NotepadPrefs {
-	return NotepadPrefs{
-		ShowStatus:        true,
-		SyntaxHighlight:   true,
-		SyntaxLangPick:    "auto",
-		DefaultZoom:       1,
-		ShowSessionPanel:  true,
-		MobilePanelSheets: true,
-		MobileBottomNav:   true,
-		AppearanceMode:    ui.AppearanceSystem,
-		ChromaStyle:       "",
-		FindUseModal:      true,
-	}
-}
 
 // AddRecent records a file open (most recent first, capped).
 func (s *NotepadStore) AddRecent(path string) error {
