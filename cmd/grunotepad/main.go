@@ -31,22 +31,26 @@ func main() {
 
 	rl.SetTraceLogLevel(rl.LogWarning)
 	ui.PrepareLinuxWindowHints()
+	ui.PrepareLinuxAppID("gru-notepad")
 	notepadFlags := uint32(rl.FlagMsaa4xHint | rl.FlagVsyncHint |
 		rl.FlagWindowResizable | rl.FlagWindowUndecorated | rl.FlagWindowHidden)
 	notepadFlags |= ui.DesktopHiDPIWindowFlag()
 	rl.SetConfigFlags(notepadFlags)
 	rl.InitWindow(initW, initH, "Gru Notepad")
+	ui.ReinforceLinuxAppID()
 	appinstance.RaiseRunningInstance = raiseRunningWindow
 	defer rl.CloseWindow()
 	rl.SetExitKey(0)
+	ui.EnsureWindowUndecorated()
 	rl.SetWindowMinSize(int(ui.MinClientWidth), 320)
 
 	ui.InitWebViewHostPolicy(true)
 	ui.ApplyUIOptimizations()
 	ui.RefreshDisplayScale()
 	ui.InitDisplayAwareAtlases()
+	// Match linux-experience applyTextEngineMode: shaped + whole-run outline strikes;
+	// backing scale tracks PresentContentScale (not a separate "SSAA for text" lever).
 	ui.SetTextEngineMode(ui.TextEngineShaped)
-	// Whole-run outline strikes (sharp on Wayland). Opt out: GRU_SHAPED_GLYPH_CACHE=0.
 	if os.Getenv("GRU_SHAPED_GLYPH_CACHE") != "0" && os.Getenv("GORY_SHAPED_GLYPH_CACHE") != "0" {
 		ui.PreferShapedGlyphCache(true)
 	}
@@ -67,9 +71,7 @@ func main() {
 	defer ui.Toasts.Unload()
 
 	appicon.ReapplyWindowIcon()
-	fmt.Fprintf(os.Stderr, "Gru Notepad render: text=%s icons=%s ssaa=%.1fx dpi=%.2f\n",
-		ui.TextEngineBackendName(), ui.Phosphor.IconFontSummary(),
-		ui.EffectiveSupersamplingScale(), ui.DisplayScale)
+	logNotepadRenderLine()
 
 	scene := notepad.NewScene()
 	defer scene.Destroy()
@@ -94,6 +96,8 @@ func main() {
 		func() { shouldClose = true },
 		func() { rl.MinimizeWindow() },
 		func() {
+			// Match linux-experience platformWindowToggleMaximize.
+			ui.NotifyWebViewLayoutJump()
 			if rl.IsWindowMaximized() {
 				rl.RestoreWindow()
 			} else {
@@ -109,6 +113,8 @@ func main() {
 	bg := ui.WindowChromeFill()
 	borderless := true
 	windowShown := false
+	presentRevealPending := false
+	lastWindowMaximized := rl.IsWindowMaximized()
 	rl.SetTargetFPS(60)
 	ui.SetOverlayChromeInsets(ui.TitleBarHeight, 0)
 	ui.ApplyNativeBorderlessRoundedCorners(true)
@@ -162,7 +168,25 @@ func main() {
 			resizeHold.NoteDimensionChange(frameStart)
 			// Defer RT + shell layout (S1: ForceFullLayout only if rem changes — inside Sync).
 			ui.SyncBorderlessClientSize(doc, titleBar, windowW, windowH)
+			ui.NotificationCenterMgr.SetWindowSize(windowW, windowH)
+			ui.Toasts.SetWindowSize(windowW, windowH)
+			ui.Tooltips.SetWindowSize(windowW, windowH)
 			setBreakpointIfChanged(windowW)
+		}
+		if rl.IsWindowReady() {
+			zoomed := rl.IsWindowMaximized()
+			if zoomed != lastWindowMaximized {
+				ui.NotifyWebViewLayoutJump()
+				// Cosmic maximize configure lands over several frames — defer RT
+				// recreate so we don't hitch on a full-size atlas rebuild mid-jump.
+				resizeHold.NoteGesture(frameStart)
+				ui.DeferWindowTextures(nw, nh)
+				doc.InvalidatePaint()
+				lastWindowMaximized = zoomed
+			}
+		}
+		if ui.WebViewLayoutJumpActive(frameStart) {
+			resizeHold.NoteGesture(frameStart)
 		}
 
 		// Frame order: overlay hit rects → title bar → wheel →
@@ -213,7 +237,8 @@ func main() {
 
 		mouse := rl.GetMousePosition()
 		titleBarBlocks := borderless && mouse.Y < ui.TitleBarHeight
-		resizeInputBlock := borderless && (titleBar.IsResizing() || titleBar.IsDragging() || ui.FillClientChromeResizing())
+		resizeInputBlock := borderless && (titleBar.IsResizing() || titleBar.IsDragging() ||
+			ui.FillClientChromeResizing() || resizeHold.KeepActiveFPS(frameStart))
 		ui.SetScenePointerBlocked(ui.OverlayBlocksSceneInput() || resizeInputBlock || titleBarBlocks)
 		if !ui.ScenePointerBlocked() {
 			ui.ProcessSwitchListTilePointers(doc.Root, dt)
@@ -257,6 +282,21 @@ func main() {
 		}
 		if !ui.OverlayBlocksSceneInput() && !focusBlock {
 			ui.RouteScenePointerFocus(doc)
+		}
+
+		// Cosmic/Wayland maximize/configure can land during Update — sync again
+		// before the present pass (linux-experience syncWindowFromDisplay).
+		if w, h, ok := ui.SyncBorderlessClientIfChanged(doc, titleBar, windowW, windowH); ok {
+			windowW, windowH = w, h
+			setBreakpointIfChanged(windowW)
+			frameResized = true
+			ui.SetChromeWindowMoving(true)
+			ui.NotificationCenterMgr.SetWindowSize(windowW, windowH)
+			ui.Toasts.SetWindowSize(windowW, windowH)
+			ui.Tooltips.SetWindowSize(windowW, windowH)
+			if doc.Root.IsDirty() || ui.SubtreeLayoutDirty(doc.Root) {
+				doc.Root.Layout()
+			}
 		}
 
 		// RT / client mismatch: defer recreate while dragging; never stretch-blit.
@@ -318,6 +358,10 @@ func main() {
 		drawInteractionOverlay(windowW, windowH, doc.Root)
 		drawScreenOverlays(windowW, windowH, doc.Root)
 		rl.EndDrawing()
+		ui.PresentWebViewHosts()
+		if !ui.OverlayBlocksSceneInput() && !resizeInputBlock {
+			ui.RouteScenePointerFocusAfterPresent(doc)
+		}
 
 		frameEnd := time.Now()
 		if borderless && titleBar.IsResizing() {
@@ -328,22 +372,35 @@ func main() {
 		ui.SettleBorderlessClientTextures(titleBar)
 
 		if !windowShown {
+			// Wayland: map hidden → wait for scaled FB → sync backing/atlases to content scale.
+			ui.BeginPresentReveal()
 			if rl.IsWindowHidden() {
 				rl.ClearWindowState(uint32(rl.FlagWindowHidden))
 			}
 			windowShown = true
+			presentRevealPending = true
 			raiseRunningWindow()
 			appicon.ReapplyWindowIcon()
-			ui.RefreshDisplayScale()
+			ui.SyncSupersamplingToContentScale()
 			if ui.ApplyDisplayAwareSupersampling(windowW, windowH) {
 				doc.UnloadCache()
 			}
 			if w, h, ok := ui.SyncBorderlessClientIfChanged(doc, titleBar, windowW, windowH); ok {
 				windowW, windowH = w, h
 			}
+			logNotepadRenderLine()
 			doc.InvalidatePaint()
+		} else if presentRevealPending {
+			ui.FinishPresentReveal()
+			presentRevealPending = false
 		}
 	}
+}
+
+func logNotepadRenderLine() {
+	fmt.Fprintf(os.Stderr, "Gru Notepad render: text=%s font=%s icons=%s backing=%.2fx layoutDpi=%.2f contentScale=%.2f\n",
+		ui.TextEngineBackendName(), ui.LoadedUIFontPath, ui.Phosphor.IconFontSummary(),
+		ui.EffectiveSupersamplingScale(), ui.DisplayScale, ui.PresentContentScale)
 }
 
 func drawScreenOverlays(windowW, windowH int32, root ui.Node) {
