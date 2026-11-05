@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/gen2brain/raylib-go/raylib v0.55.1
-	github.com/ledocorp/gru v0.8.0
+	github.com/ledocorp/gru v0.9.1
 	modernc.org/sqlite v1.34.5
 )
 

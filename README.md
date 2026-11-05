@@ -1,12 +1,12 @@
 # Gru Notepad
 
-**Showcase version:** 0.8.0 (aligned with GRU toolkit)  
+**Showcase version:** 0.9.0 (aligned with GRU toolkit)  
 **License:** [GNU GPLv3](LICENSE)  
-**Depends on:** [`github.com/ledocorp/gru`](https://github.com/ledocorp/gru) `@v0.8.0`
+**Depends on:** [`github.com/ledocorp/gru`](https://github.com/ledocorp/gru) `@v0.9.1`
 
 Gru Notepad is a **product-shaped example** of the Gru UI toolkit: edge shell, text editor, multi-doc sessions, markdown preview, syntax highlight, and spell check in one thin desktop host.
 
-It is **not** “Notepad product v1.” Treat this as a **v0.8.x capability showcase / template**.
+It is **not** “Notepad product v1.” Treat this as a **v0.9.x capability showcase / template**.
 
 | | |
 |--|--|
